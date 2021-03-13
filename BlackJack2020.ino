@@ -18,6 +18,7 @@
     See <https://www.gnu.org/licenses/>.
  */
 
+#include "BSOS_Config.h"
 #include "BallySternOS.h"
 #include "BlackJack2020.h"
 #include "SelfTestAndAudit.h"
@@ -288,38 +289,6 @@ void setup() {
     Serial.begin(115200);
   }
 
-  // Start out with everything tri-state, in case the original
-  // CPU is running
-  // Set data pins to input
-  // Make pins 2-7 input
-  DDRD = DDRD & 0x03;
-  // Make pins 8-13 input
-  DDRB = DDRB & 0xC0;
-  // Set up the address lines A0-A5 as input (for now)
-  DDRC = DDRC & 0xC0;
-
-
-  unsigned long startTime = millis();
-  unsigned long numberOfClockTicks = 0;
-  boolean sawHigh = false;
-  boolean sawLow = false;
-  byte lastClockReading = digitalRead(4);
-  byte curClockReading;
-  // for three seconds, look for activity on the VMA line (A5)
-  // If we see anything, then the MPU is active so we shouldn't run
-  while ((millis()-startTime)<1000) {
-    if (digitalRead(A5)) sawHigh = true;
-    else sawLow = true;
-    curClockReading = digitalRead(4);
-    if (curClockReading==1 && lastClockReading==0) numberOfClockTicks += 1;
-    lastClockReading = curClockReading;
-  }
-  // If we saw both a high and low signal, then someone is toggling the 
-  // VMA line, so we should hang here forever (until reset)
-  if (sawHigh && sawLow) {
-    while (1);
-  }
-    
   // Tell the OS about game-specific lights and switches
   BSOS_SetupGameSwitches(NUM_SWITCHES_WITH_TRIGGERS, NUM_PRIORITY_SWITCHES_WITH_TRIGGERS, TriggeredSwitches);
 
@@ -676,9 +645,9 @@ void AddCredit() {
 boolean AddPlayer(boolean resetNumPlayers=false) {
 
   if (Credits<1 && !FreePlayMode) return false;
+  if (resetNumPlayers) CurrentNumPlayers = 0;
   if (CurrentNumPlayers>=4) return false;
 
-  if (resetNumPlayers) CurrentNumPlayers = 0;
   CurrentNumPlayers += 1;
 //  BSOS_SetDisplay(CurrentNumPlayers-1, 0);
 //  BSOS_SetDisplayBlank(CurrentNumPlayers-1, 0x30);
@@ -822,7 +791,7 @@ int InitNewBall(bool curStateChanged, byte playerNum, int ballNum) {
     if (ResetSuitsPerBall) SuitsComplete[playerNum] = 0;
     
     BettingStage = BETTING_STAGE_BUILDING_STAKES;
-    Bonus = 0;
+    Bonus = 1;
     BonusX = 1;
 
     PlayersTopCard = 0;
@@ -875,6 +844,7 @@ int RunSelfTest(int curState, boolean curStateChanged) {
     }
 
     if (curStateChanged) {
+      BSOS_ReadContinuousSolenoids();
       for (int count=0; count<4; count++) {
         BSOS_SetDisplay(count, 0);
         BSOS_SetDisplayBlank(count, 0x00);        
@@ -1834,8 +1804,11 @@ int NormalGamePlay() {
   if (BettingStage==BETTING_STAGE_BET_SWEEP) {
     // Can only bet up to Bonus-1k
     CalculateAndShowBetSweep(1, (Bonus>1)?(Bonus-1):1);
-    if ( BonusX<7 && (((CurrentTime-BettingModeStart)/2000)%2)==0 ) SweepSaucerLights();
-    else SetBonusXLights(BonusX);
+//    if ( BonusX<7 && (((CurrentTime-BettingModeStart)/2000)%2)==0 ) SweepSaucerLights();
+//    else SetBonusXLights(BonusX);
+
+    int topLightPulse = (CurrentTime/250)%16;
+    PulseTopLights(topLightPulse, SuitsComplete[CurrentPlayer]);    
   }    
 
   if (BettingStage==BETTING_STAGE_DEAL) {
@@ -1862,7 +1835,7 @@ int NormalGamePlay() {
       SetBonusXLights(BonusX);
       ShowDealersCardCountdown = NumberOfDealerHitsToShow;      
       BettingStage = BETTING_STAGE_WAIT_FOR_COLLECT;
-      BSOS_PushToTimedSolenoidStack(SOL_SAUCER, 5, 100);
+//      BSOS_PushToTimedSolenoidStack(SOL_SAUCER, 5, 100);
       PlayerHits = false;
       BettingModeStart = 0;
       LastTimeInfoUpdated = 0;
@@ -2176,7 +2149,11 @@ void HandleTopLaneSwitch(byte switchNum) {
   AddToBonus(1);
   ShowSuitsComplete(SuitsComplete[CurrentPlayer]);
   if (BallFirstSwitchHitTime==0) BallFirstSwitchHitTime = CurrentTime;
-              
+
+  if (BettingStage==BETTING_STAGE_BET_SWEEP) {
+    BettingStage = BETTING_STAGE_DEAL;
+    BettingModeStart = CurrentTime;    
+  }
 }
 
 
@@ -2277,8 +2254,9 @@ int RunGamePlayMode(int curState, boolean curStateChanged) {
             PlaySoundEffect(SOUND_EFFECT_RANDOM_SAUCER);
             BSOS_PushToTimedSolenoidStack(SOL_SAUCER, 6, CurrentTime + 500);
           } else if (BettingStage==BETTING_STAGE_BET_SWEEP) {
-            BettingStage = BETTING_STAGE_DEAL;
-            BettingModeStart = CurrentTime;
+//            BettingStage = BETTING_STAGE_DEAL;
+//            BettingModeStart = CurrentTime;
+            BSOS_PushToTimedSolenoidStack(SOL_SAUCER, 6, CurrentTime + 500);
             // Ball will be ejected from the saucer after the deal.
           } else if (BettingStage==BETTING_STAGE_END_OF_ROUND) {
           } else if (BettingStage==BETTING_STAGE_DEAL) {
