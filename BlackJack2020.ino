@@ -18,13 +18,8 @@
     See <https://www.gnu.org/licenses/>.
  */
 
-// clean up adjustments*
-// Pop bumper madness on inlane*
-// Tilt bug?*
-// Bonus collect wizard sped up but never stopped*
-// After bonus collect wizard, suits complete didn't go away*
-// BonusX should cap at 5 at end of ball*
-
+// intermediate credits 
+// new sounds
 
 #include "BSOS_Config.h"
 #include "BallySternOS.h"
@@ -55,17 +50,20 @@ boolean MachineStateChanged = true;
 #define MACHINE_STATE_ADJUST_TILT_WARNING       -19
 #define MACHINE_STATE_ADJUST_TOURNAMENT_SCORING -20
 #define MACHINE_STATE_ADJUST_MUSIC_LEVEL        -21
-#define MACHINE_STATE_ADJUST_REBOOT             -22
-#define MACHINE_STATE_ADJUST_EXTRA_BALL_AWARD   -23
-#define MACHINE_STATE_ADJUST_SPECIAL_AWARD      -24
-#define MACHINE_STATE_ADJUST_AWARD_OVERRIDE     -25
-#define MACHINE_STATE_ADJUST_BALLS_PER_GAME     -26
-#define MACHINE_STATE_ADJUST_RANDOMIZE_DECK     -27
-#define MACHINE_STATE_ADJUST_HIT_OVER_16        -28
-#define MACHINE_STATE_ADJUST_SHOW_DEALER_HITS   -29
-#define MACHINE_STATE_ADJUST_PLAYER_LOSES_TIES  -30
-#define MACHINE_STATE_ADJUST_ONE_SPECIAL_PER_BALL -31
-#define MACHINE_STATE_ADJUST_DONE               -32
+#define MACHINE_STATE_ADJUST_EXTRA_BALL_AWARD   -22
+#define MACHINE_STATE_ADJUST_SPECIAL_AWARD      -23
+#define MACHINE_STATE_ADJUST_AWARD_OVERRIDE     -24
+#define MACHINE_STATE_ADJUST_BALLS_PER_GAME     -25
+#define MACHINE_STATE_ADJUST_RANDOMIZE_DECK     -26
+#define MACHINE_STATE_ADJUST_HIT_OVER_16        -27
+#define MACHINE_STATE_ADJUST_SHOW_DEALER_HITS   -28
+#define MACHINE_STATE_ADJUST_PLAYER_LOSES_TIES  -29
+#define MACHINE_STATE_ADJUST_ONE_SPECIAL_PER_BALL -30
+#define MACHINE_STATE_ADJUST_CPC_CHUTE_1        -31
+#define MACHINE_STATE_ADJUST_CPC_CHUTE_2        -32
+#define MACHINE_STATE_ADJUST_CPC_CHUTE_3        -33
+#define MACHINE_STATE_ADJUST_NO_RESET_DURING_PLAY  -34
+#define MACHINE_STATE_ADJUST_DONE               -35
 
 
 #define CLUB_BUMPER_INDEX     0
@@ -104,6 +102,7 @@ boolean MachineStateChanged = true;
 #define SOUND_EFFECT_MACHINE_START        37
 #define SOUND_EFFECT_EXTRA_BALL           38
 #define SOUND_EFFECT_SLING                39
+#define SOUND_EFFECT_COIN_DROP            40
 #define SOUND_EFFECT_MATCH_SPIN           50
 #define SOUND_EFFECT_BONUS_COLLECT_HURRY_UP 51
 #define SOUND_EFFECT_BONUS_COUNTDOWN_BASE 100
@@ -129,6 +128,10 @@ boolean MachineStateChanged = true;
 #define EEPROM_NUM_HITS_TO_SHOW_DEALER_BYTE   119
 #define EEPROM_PLAYER_LOSES_TIES_BYTE         120
 #define EEPROM_ONE_SPECIAL_PER_BALL_BYTE      121
+#define EEPROM_CPC_CHUTE_1_SELECTION        122
+#define EEPROM_CPC_CHUTE_2_SELECTION        123
+#define EEPROM_CPC_CHUTE_3_SELECTION        124
+#define EEPROM_NO_RESET_DURING_PLAY         125
 
 
 
@@ -141,6 +144,21 @@ int Credits = 0;
 int MaximumCredits = 20;
 boolean FreePlayMode = false;
 byte CreditsPerCoin1, CreditsPerCoin2, CreditsPerCoin3;
+
+#define NUM_CPC_PAIRS 9
+byte CPCPairs[NUM_CPC_PAIRS][2] = {
+  {1, 5},
+  {1, 4},
+  {1, 3},
+  {1, 2},
+  {1, 1},
+  {2, 3},
+  {2, 1},
+  {3, 1},
+  {4, 1}
+};
+byte ChuteCoinsInProgress[3];
+byte CPCSelection[3];
 
 // Game mechanics
 byte CurrentPlayer = 0;
@@ -158,6 +176,7 @@ boolean BallSaveUsed = false;
 byte BallSaveNumSeconds = 0;
 byte BallsPerGame = 3;
 boolean MatchFeature = true;
+boolean NoResetDuringPlay = true;
 
 byte NumTiltWarnings = 0;
 unsigned long LastTiltWarningTime = 0;
@@ -248,6 +267,10 @@ void DecodeDIPSwitchParameters() {
 
 void GetStoredParameters() {
 
+  for (byte count=0; count<3; count++) {
+    ChuteCoinsInProgress[count] = 0;
+  }
+
   byte ballsOverride = ReadSetting(EEPROM_BALLS_OVERRIDE_BYTE, 99);
   if (ballsOverride==3 || ballsOverride==5) {
     BallsPerGame = ballsOverride;
@@ -261,13 +284,21 @@ void GetStoredParameters() {
   BallSaveNumSeconds = ReadSetting(EEPROM_BALL_SAVE_BYTE, 16);
   MaxTiltWarnings = ReadSetting(EEPROM_TILT_WARNING_BYTE, 2);
   MusicLevel = ReadSetting(EEPROM_MUSIC_LEVEL_BYTE, 2);
-//  ResetSuitsPerBall = ReadSetting(EEPROM_CLEAR_SUITS_BYTE, false);
   RandomizeDeck = ReadSetting(EEPROM_RANDOMIZE_DECK_BYTE, 2);
   NoHitsOver16 = ReadSetting(EEPROM_HIT_OVER_16_BYTE, true);
   NumberOfDealerHitsToShow = ReadSetting(EEPROM_NUM_HITS_TO_SHOW_DEALER_BYTE, 2);
   ExtraBallValue = BSOS_ReadULFromEEProm(EEPROM_EXTRA_BALL_SCORE_BYTE);
   SpecialValue = BSOS_ReadULFromEEProm(EEPROM_SPECIAL_SCORE_BYTE);
   OneSpecialPerBall = ReadSetting(EEPROM_ONE_SPECIAL_PER_BALL_BYTE, false);
+
+  CPCSelection[0] = ReadSetting(EEPROM_CPC_CHUTE_1_SELECTION, 4);
+  if (CPCSelection[0]>8) CPCSelection[0] = 4;
+  CPCSelection[1] = ReadSetting(EEPROM_CPC_CHUTE_2_SELECTION, 4);
+  if (CPCSelection[1]>8) CPCSelection[1] = 4;
+  CPCSelection[2] = ReadSetting(EEPROM_CPC_CHUTE_3_SELECTION, 4);
+  if (CPCSelection[2]>8) CPCSelection[2] = 4;
+
+  NoResetDuringPlay = ReadSetting(EEPROM_NO_RESET_DURING_PLAY, true)?true:false;
 
   byte noveltyOverride = ReadSetting(EEPROM_TOURNAMENT_SCORING_BYTE, 99);
   if (noveltyOverride!=99) NoveltyScoring = noveltyOverride;
@@ -296,43 +327,10 @@ byte ReadSetting(byte setting, byte defaultValue) {
     return value;
 }
 
-void setup() {  
-
-  // If using an Alltek & experiencing boot problems, 
-  // try uncommenting the following delay:
-  //delay(2000);
-  
-  if (DEBUG_MESSAGES) {
-    Serial.begin(57600);
-    Serial.write("Setup begin.\n");
-  }
-
-  // Tell the OS about game-specific lights and switches
-  BSOS_SetupGameSwitches(NUM_SWITCHES_WITH_TRIGGERS, NUM_PRIORITY_SWITCHES_WITH_TRIGGERS, TriggeredSwitches);
-
-  // Set up the chips and interrupts
-  BSOS_InitializeMPU();
-  BSOS_DisableSolenoidStack();
-  BSOS_SetDisableFlippers(true);
-
-  // Use dip switches to set up game variables
-  GetDIPSwitches();
-  DecodeDIPSwitchParameters();
-
-  // Read parameters from EEProm
-  GetStoredParameters();
-  
-  CurrentTime = millis();
-  PlaySoundEffect(SOUND_EFFECT_MACHINE_START);  
-  if (DEBUG_MESSAGES) {
-    Serial.write("Kicking out saucer\n");
-  }
-  BSOS_PushToSolenoidStack(SOL_SAUCER, 5, true);
-
-}
 
 
-void PlaySoundEffect(byte soundEffectNum) {
+
+void PlaySoundEffect(byte soundEffectNum, unsigned long timeOffset=0) {
   if (MusicLevel==0) return;
 
   int count;
@@ -345,6 +343,9 @@ void PlaySoundEffect(byte soundEffectNum) {
         BSOS_PushToTimedSolenoidStack(SOL_CHIME_100, 3, CurrentTime+200, true);
         BSOS_PushToTimedSolenoidStack(SOL_CHIME_1000, 3, CurrentTime+400, true);
       }    
+    break;
+    case SOUND_EFFECT_COIN_DROP:
+      BSOS_PushToTimedSolenoidStack(SOL_CHIME_10, 3, CurrentTime, true);
     break;
     case SOUND_EFFECT_BALL_OVER:
       BSOS_PushToTimedSolenoidStack(SOL_CHIME_10, 3, CurrentTime, true);
@@ -368,17 +369,30 @@ void PlaySoundEffect(byte soundEffectNum) {
         BSOS_PushToTimedSolenoidStack(SOL_CHIME_10, 3, CurrentTime+750, true);
       }
     break;
+/*    
     case SOUND_EFFECT_MACHINE_START:
       BSOS_PushToTimedSolenoidStack(SOL_CHIME_10, 3, CurrentTime, true);
       BSOS_PushToTimedSolenoidStack(SOL_CHIME_10, 1, CurrentTime+500, true);
       BSOS_PushToTimedSolenoidStack(SOL_CHIME_100, 3, CurrentTime+600, true);
       BSOS_PushToTimedSolenoidStack(SOL_CHIME_1000, 3, CurrentTime+900, true);
     break;
+*/    
+    case SOUND_EFFECT_MACHINE_START:
+      BSOS_PushToTimedSolenoidStack(SOL_CHIME_100, 3, CurrentTime, true);
+      BSOS_PushToTimedSolenoidStack(SOL_CHIME_100, 3, CurrentTime+150, true);
+      BSOS_PushToTimedSolenoidStack(SOL_CHIME_1000, 3, CurrentTime+200, true);
+      BSOS_PushToTimedSolenoidStack(SOL_CHIME_10, 3, CurrentTime+400, true);
+      BSOS_PushToTimedSolenoidStack(SOL_CHIME_10, 3, CurrentTime+550, true);
+      BSOS_PushToTimedSolenoidStack(SOL_CHIME_100, 3, CurrentTime+600, true);
+      BSOS_PushToTimedSolenoidStack(SOL_CHIME_100, 3, CurrentTime+800, true);
+      BSOS_PushToTimedSolenoidStack(SOL_CHIME_100, 3, CurrentTime+950, true);
+      BSOS_PushToTimedSolenoidStack(SOL_CHIME_100, 3, CurrentTime+1000, true);
+    break;
     case SOUND_EFFECT_ADD_CREDIT:
-      BSOS_PushToTimedSolenoidStack(SOL_CHIME_10, 3, CurrentTime, true);
-      BSOS_PushToTimedSolenoidStack(SOL_CHIME_100, 3, CurrentTime+75, true);
-      BSOS_PushToTimedSolenoidStack(SOL_CHIME_1000, 3, CurrentTime+150, true);
-      BSOS_PushToTimedSolenoidStack(SOL_CHIME_1000, 3, CurrentTime+225, true);
+      BSOS_PushToTimedSolenoidStack(SOL_CHIME_10, 3, CurrentTime + timeOffset, true);
+      BSOS_PushToTimedSolenoidStack(SOL_CHIME_100, 3, CurrentTime+75 + timeOffset, true);
+      BSOS_PushToTimedSolenoidStack(SOL_CHIME_1000, 3, CurrentTime+150 + timeOffset, true);
+      BSOS_PushToTimedSolenoidStack(SOL_CHIME_1000, 3, CurrentTime+225 + timeOffset, true);
     break;
     case SOUND_EFFECT_PLAYER_WINS:
       for (count=0; count<(MusicLevel*2+1); count++) {
@@ -477,6 +491,42 @@ void PlaySoundEffect(byte soundEffectNum) {
     break;
   }    
   
+}
+
+
+void setup() {  
+
+  // If using an Alltek & experiencing boot problems, 
+  // try uncommenting the following delay:
+  //delay(2000);
+  
+  if (DEBUG_MESSAGES) {
+    Serial.begin(57600);
+    Serial.write("Setup begin.\n");
+  }
+
+  // Tell the OS about game-specific lights and switches
+  BSOS_SetupGameSwitches(NUM_SWITCHES_WITH_TRIGGERS, NUM_PRIORITY_SWITCHES_WITH_TRIGGERS, TriggeredSwitches);
+
+  // Set up the chips and interrupts
+  BSOS_InitializeMPU();
+  BSOS_DisableSolenoidStack();
+  BSOS_SetDisableFlippers(true);
+
+  // Use dip switches to set up game variables
+  GetDIPSwitches();
+  DecodeDIPSwitchParameters();
+
+  // Read parameters from EEProm
+  GetStoredParameters();
+  
+  CurrentTime = millis();
+  PlaySoundEffect(SOUND_EFFECT_MACHINE_START);  
+  if (DEBUG_MESSAGES) {
+    Serial.write("Kicking out saucer\n");
+  }
+  BSOS_PushToSolenoidStack(SOL_SAUCER, 5, true);
+
 }
 
 void PulseTopLights(byte topLightPulse, byte suitsComplete) {
@@ -667,16 +717,71 @@ void ClearOverridePlayerDisplays() {
 }
 
 
-void AddCredit() {
-  if (Credits<MaximumCredits) {
-    Credits += 1;
-    BSOS_WriteByteToEEProm(BSOS_CREDITS_EEPROM_BYTE, Credits);
-    PlaySoundEffect(SOUND_EFFECT_ADD_CREDIT);    
-  } else {
+void AddCredit(byte numCredits = 1, boolean silent = false) {
+  unsigned long timeOffset = 0;
+  for (byte count=0; count<numCredits; count++) {
+    if (Credits<MaximumCredits) {
+      Credits += 1;
+      BSOS_WriteByteToEEProm(BSOS_CREDITS_EEPROM_BYTE, Credits);
+      if (!silent) PlaySoundEffect(SOUND_EFFECT_ADD_CREDIT, timeOffset);    
+    } else {
+    }
+    timeOffset += 500;
   }
 
-  BSOS_SetDisplayCredits(Credits, CreditDisplay);
-  BSOS_SetCoinLockout((Credits<MaximumCredits)?false:true);
+  BSOS_SetDisplayCredits(Credits, CreditDisplay && !FreePlayMode);
+  BSOS_SetCoinLockout((Credits<MaximumCredits && !FreePlayMode)?false:true);
+}
+
+
+void AddCoinToAudit(byte switchHit) {
+
+  unsigned short coinAuditStartByte = 0;
+
+  switch (switchHit) {
+    case SW_COIN_3: coinAuditStartByte = BSOS_CHUTE_3_COINS_START_BYTE; break;
+    case SW_COIN_2: coinAuditStartByte = BSOS_CHUTE_2_COINS_START_BYTE; break;
+    case SW_COIN_1: coinAuditStartByte = BSOS_CHUTE_1_COINS_START_BYTE; break;
+  }
+
+  if (coinAuditStartByte) {
+    BSOS_WriteULToEEProm(coinAuditStartByte, BSOS_ReadULFromEEProm(coinAuditStartByte) + 1);
+  }
+
+}
+
+boolean AddCoin(byte chuteNum) {
+  boolean creditAdded = false;
+  if (chuteNum>2) return false;
+  byte cpcSelection = CPCSelection[chuteNum];
+
+  // Find the lowest chute num with the same ratio selection
+  // and use that ChuteCoinsInProgress counter
+  byte chuteNumToUse;
+  for (chuteNumToUse=0; chuteNumToUse<=chuteNum; chuteNumToUse++) {
+    if (CPCSelection[chuteNumToUse]==cpcSelection) break;
+  }
+
+  byte cpcCoins = CPCPairs[cpcSelection][0];
+  byte cpcCredits = CPCPairs[cpcSelection][1];
+  byte coinProgressBefore = ChuteCoinsInProgress[chuteNumToUse];
+  ChuteCoinsInProgress[chuteNumToUse] += 1;
+
+  if (ChuteCoinsInProgress[chuteNumToUse]==cpcCoins) {
+    if (cpcCredits>cpcCoins) AddCredit(cpcCredits - (coinProgressBefore));
+    else AddCredit(cpcCredits);
+    ChuteCoinsInProgress[chuteNumToUse] = 0;
+    creditAdded = true;
+  } else {
+    if (cpcCredits>cpcCoins) {
+      AddCredit(1);
+      creditAdded = true;
+    } else {
+      PlaySoundEffect(SOUND_EFFECT_COIN_DROP);
+    }
+  }
+
+  return creditAdded;
 }
 
 
@@ -696,7 +801,7 @@ boolean AddPlayer(boolean resetNumPlayers=false) {
     BSOS_WriteByteToEEProm(BSOS_CREDITS_EEPROM_BYTE, Credits);
   }
 
-  BSOS_SetDisplayCredits(Credits, CreditDisplay);
+  BSOS_SetDisplayCredits(Credits, CreditDisplay && !FreePlayMode);
   BSOS_WriteULToEEProm(BSOS_TOTAL_PLAYS_EEPROM_START_BYTE, BSOS_ReadULFromEEProm(BSOS_TOTAL_PLAYS_EEPROM_START_BYTE) + 1);
   PlaySoundEffect(SOUND_EFFECT_ADD_PLAYER);
 
@@ -735,11 +840,11 @@ int InitGamePlay(boolean curStateChanged) {
   if (curStateChanged) {
     CurrentTime = millis();
 
-    BSOS_SetCoinLockout((Credits>=MaximumCredits)?true:false);
+    BSOS_SetCoinLockout((Credits>=MaximumCredits || FreePlayMode)?true:false);
     BSOS_SetDisableFlippers(true);
     BSOS_DisableSolenoidStack();
     BSOS_TurnOffAllLamps();
-    if (Credits) BSOS_SetLampState(CREDIT_LIGHT, 1);
+    BSOS_SetLampState(CREDIT_LIGHT, Credits||FreePlayMode);
     BSOS_SetDisplayBallInPlay(1);
 
     DisplayOverridden = 0;
@@ -815,7 +920,7 @@ int InitNewBall(bool curStateChanged, byte playerNum, int ballNum) {
     
     BSOS_SetDisableFlippers(false);
     BSOS_EnableSolenoidStack(); 
-    BSOS_SetDisplayCredits(Credits, CreditDisplay);
+    BSOS_SetDisplayCredits(Credits, CreditDisplay && !FreePlayMode);
     SetPlayerLamps(playerNum+1, 500);
     
     if (BSOS_ReadSingleSwitchState(SW_OUTHOLE)) {
@@ -876,7 +981,12 @@ int RunSelfTest(int curState, boolean curStateChanged) {
   // Any state that's greater than CHUTE_3 is handled by the Base Self-test code
   // Any that's less, is machine specific, so we handle it here.
   if (curState>=MACHINE_STATE_TEST_CHUTE_3_COINS) {
-    returnState = RunBaseSelfTest(returnState, curStateChanged, CurrentTime, SW_CREDIT_RESET);  
+    returnState = RunBaseSelfTest(returnState, curStateChanged, CurrentTime, SW_CREDIT_RESET, SW_SLAM);
+    if (returnState==MACHINE_STATE_ATTRACT) {
+      DecodeDIPSwitchParameters();
+      GetStoredParameters();
+      returnState = MACHINE_STATE_ATTRACT;     
+    }
   } else {
     byte curSwitch = BSOS_PullFirstFromSwitchStack();
 
@@ -925,12 +1035,7 @@ int RunSelfTest(int curState, boolean curStateChanged) {
         AdjustmentType = ADJ_TYPE_MIN_MAX_DEFAULT;
         AdjustmentValues[1] = 2;
         CurrentAdjustmentByte = &MusicLevel;
-        CurrentAdjustmentStorageByte = EEPROM_MUSIC_LEVEL_BYTE;
-      } else if (curState==MACHINE_STATE_ADJUST_REBOOT) {
-        for (byte count=0; count<4; count++) {
-          BSOS_SetDisplay(count, 8007, true);
-        }
-        CurrentAdjustmentByte = 0;
+        CurrentAdjustmentStorageByte = EEPROM_MUSIC_LEVEL_BYTE;      
       } else if (curState==MACHINE_STATE_ADJUST_EXTRA_BALL_AWARD) {
         AdjustmentType = ADJ_TYPE_SCORE_WITH_DEFAULT;
         CurrentAdjustmentUL = &ExtraBallValue;
@@ -939,10 +1044,6 @@ int RunSelfTest(int curState, boolean curStateChanged) {
         AdjustmentType = ADJ_TYPE_SCORE_WITH_DEFAULT;
         CurrentAdjustmentUL = &SpecialValue;
         CurrentAdjustmentStorageByte = EEPROM_SPECIAL_SCORE_BYTE;
-/*      } else if (curState==MACHINE_STATE_ADJUST_CLEAR_SUITS) {
-        CurrentAdjustmentByte = (byte *)&ResetSuitsPerBall;
-        CurrentAdjustmentStorageByte = EEPROM_CLEAR_SUITS_BYTE;
-*/        
       } else if (curState==MACHINE_STATE_ADJUST_AWARD_OVERRIDE) {
         AdjustmentType = ADJ_TYPE_MIN_MAX_DEFAULT;
         AdjustmentValues[1] = 7;
@@ -980,12 +1081,27 @@ int RunSelfTest(int curState, boolean curStateChanged) {
       } else if (curState==MACHINE_STATE_ADJUST_ONE_SPECIAL_PER_BALL) {
         CurrentAdjustmentByte = (byte *)&OneSpecialPerBall;
         CurrentAdjustmentStorageByte = EEPROM_ONE_SPECIAL_PER_BALL_BYTE;
+      } else if (curState==MACHINE_STATE_ADJUST_CPC_CHUTE_1) {
+        AdjustmentValues[1] = 8;
+        CurrentAdjustmentByte = (byte *)&(CPCSelection[0]);
+        CurrentAdjustmentStorageByte = EEPROM_CPC_CHUTE_1_SELECTION;
+      } else if (curState==MACHINE_STATE_ADJUST_CPC_CHUTE_2) {
+        AdjustmentValues[1] = 8;
+        CurrentAdjustmentByte = (byte *)&(CPCSelection[1]);
+        CurrentAdjustmentStorageByte = EEPROM_CPC_CHUTE_2_SELECTION;
+      } else if (curState==MACHINE_STATE_ADJUST_CPC_CHUTE_3) {
+        AdjustmentValues[1] = 8;
+        CurrentAdjustmentByte = (byte *)&(CPCSelection[2]);
+        CurrentAdjustmentStorageByte = EEPROM_CPC_CHUTE_3_SELECTION;
+      } else if (curState==MACHINE_STATE_ADJUST_NO_RESET_DURING_PLAY) {
+        CurrentAdjustmentByte = (byte *)&NoResetDuringPlay;
+        CurrentAdjustmentStorageByte = EEPROM_NO_RESET_DURING_PLAY;
       } else if (curState==MACHINE_STATE_ADJUST_DONE) {
         DecodeDIPSwitchParameters();
         GetStoredParameters();
         returnState = MACHINE_STATE_ATTRACT;
       } else {
-        returnState = MACHINE_STATE_ADJUST_REBOOT;     
+        returnState = curState;
       }
     }
 
@@ -1020,20 +1136,28 @@ int RunSelfTest(int curState, boolean curStateChanged) {
         *CurrentAdjustmentUL = curVal;
         if (CurrentAdjustmentStorageByte) BSOS_WriteULToEEProm(CurrentAdjustmentStorageByte, curVal);
       }
-      
-      if (curState==MACHINE_STATE_ADJUST_REBOOT) {
-        // If any variables have been set to non-override (99), return 
-        // them to dip switch settings
-        // Balls Per Game, Player Loses On Ties, Novelty Scoring, Award Score
-        DecodeDIPSwitchParameters();
-        GetStoredParameters();
-        returnState = MACHINE_STATE_ATTRACT;     
+
+      if (curState==MACHINE_STATE_ADJUST_FREEPLAY) {
+        BSOS_SetCoinLockout((Credits<MaximumCredits && !FreePlayMode)?false:true);
       }
+    }
+
+    if (curSwitch==SW_SLAM) {
+      DecodeDIPSwitchParameters();
+      GetStoredParameters();
+      returnState = MACHINE_STATE_ATTRACT;     
     }
 
     // Show current value
     if (CurrentAdjustmentByte!=NULL) {
-      BSOS_SetDisplay(0, (unsigned long)(*CurrentAdjustmentByte), true);
+      if (curState==MACHINE_STATE_ADJUST_CPC_CHUTE_1 || curState==MACHINE_STATE_ADJUST_CPC_CHUTE_2 || curState==MACHINE_STATE_ADJUST_CPC_CHUTE_3) {
+        byte curSelection = *CurrentAdjustmentByte;
+        BSOS_SetDisplay(0, CPCPairs[curSelection][0], true);
+        BSOS_SetDisplay(2, CPCPairs[curSelection][1], true);
+      } else {
+        BSOS_SetDisplay(0, (unsigned long)(*CurrentAdjustmentByte), true);
+        BSOS_SetDisplayBlank(2, 0x00);
+      }
     } else if (CurrentAdjustmentUL!=NULL) {
       BSOS_SetDisplay(0, (*CurrentAdjustmentUL), true);
     }
@@ -1359,7 +1483,7 @@ void CheckHighScores() {
       if (Credits>MaximumCredits) Credits = MaximumCredits;
       BSOS_WriteByteToEEProm(BSOS_CREDITS_EEPROM_BYTE, Credits);
       BSOS_WriteULToEEProm(BSOS_TOTAL_REPLAYS_EEPROM_START_BYTE, BSOS_ReadULFromEEProm(BSOS_TOTAL_REPLAYS_EEPROM_START_BYTE) + 3);
-      BSOS_SetDisplayCredits(Credits, CreditDisplay);
+      BSOS_SetDisplayCredits(Credits, CreditDisplay && !FreePlayMode);
     }
     BSOS_WriteULToEEProm(BSOS_HIGHSCORE_EEPROM_START_BYTE, highestScore);
     BSOS_WriteULToEEProm(BSOS_TOTAL_HISCORE_BEATEN_START_BYTE, BSOS_ReadULFromEEProm(BSOS_TOTAL_HISCORE_BEATEN_START_BYTE) + 1);
@@ -1428,6 +1552,12 @@ void ToggleAce() {
 }
 
 
+byte LastCreditButtonState;
+byte CreditButtonSequenceGate;
+unsigned long LastTimeCreditButtonPressed;
+unsigned long LastTimeCreditButtonReleased;
+
+
 int ClearSwitchBuffer(int curState, boolean ResetNumPlayers) {
   int returnState = curState;
   byte switchHit;
@@ -1436,7 +1566,11 @@ int ClearSwitchBuffer(int curState, boolean ResetNumPlayers) {
       if (AddPlayer(ResetNumPlayers)) returnState = MACHINE_STATE_INIT_GAMEPLAY;
     }
     if (switchHit==SW_COIN_1 || switchHit==SW_COIN_2 || switchHit==SW_COIN_3) {
-      AddCredit();
+      byte chuteNum = 0;
+      if (switchHit==SW_COIN_2) chuteNum = 1;
+      if (switchHit==SW_COIN_3) chuteNum = 2;
+      AddCoin(chuteNum);
+      AddCoinToAudit(switchHit);
     }
     if (switchHit==SW_SELF_TEST_SWITCH && (CurrentTime-GetLastSelfTestChangedTime())>500) {
       returnState = MACHINE_STATE_TEST_LIGHTS;
@@ -1457,8 +1591,8 @@ int RunAttractMode(int curState, boolean curStateChanged) {
   if (curStateChanged) {
     BSOS_DisableSolenoidStack();
     BSOS_TurnOffAllLamps();
-    if (Credits) BSOS_SetLampState(CREDIT_LIGHT, 1);
-    if (Credits>=MaximumCredits) BSOS_SetCoinLockout(true);
+    BSOS_SetLampState(CREDIT_LIGHT, Credits||FreePlayMode);
+    if (Credits>=MaximumCredits || FreePlayMode) BSOS_SetCoinLockout(true);
     else BSOS_SetCoinLockout(false);
     BSOS_SetDisableFlippers(true);
     if (DEBUG_MESSAGES) {
@@ -1467,10 +1601,15 @@ int RunAttractMode(int curState, boolean curStateChanged) {
     for (int count=0; count<4; count++) {
       BSOS_SetDisplayBlank(count, 0x00);     
     }
-    BSOS_SetDisplayCredits(Credits, CreditDisplay);
-    BSOS_SetDisplayBallInPlay(0);
+    BSOS_SetDisplayCredits(Credits, CreditDisplay && !FreePlayMode);
+    BSOS_SetDisplayBallInPlay(CreditButtonSequenceGate);
     AttractLastHeadMode = 255;
     AttractLastPlayfieldMode = 255;
+
+    LastCreditButtonState = 0;
+    CreditButtonSequenceGate = 0;
+    LastTimeCreditButtonPressed = 0;
+    LastTimeCreditButtonReleased = 0;  
   }
 
   // Alternate displays between high score and blank
@@ -1485,8 +1624,8 @@ int RunAttractMode(int curState, boolean curStateChanged) {
       SetPlayerLamps(0);
 
       ShowPlayerDisplays(false, true, 4);
-      BSOS_SetDisplayCredits(Credits, CreditDisplay);
-      BSOS_SetDisplayBallInPlay(0, true);
+      BSOS_SetDisplayCredits(Credits, CreditDisplay && !FreePlayMode);
+      BSOS_SetDisplayBallInPlay(CreditButtonSequenceGate, true);
     }
     AttractLastHeadMode = 1;
     
@@ -1494,8 +1633,8 @@ int RunAttractMode(int curState, boolean curStateChanged) {
     if (AttractLastHeadMode!=2) {
       BSOS_SetLampState(HIGH_SCORE, 0);
       BSOS_SetLampState(GAME_OVER, 1);
-      BSOS_SetDisplayCredits(Credits, CreditDisplay);
-      BSOS_SetDisplayBallInPlay(0, true);
+      BSOS_SetDisplayCredits(Credits, CreditDisplay && !FreePlayMode);
+      BSOS_SetDisplayBallInPlay(CreditButtonSequenceGate, true);
       for (int count=0; count<4; count++) {
         if (CurrentNumPlayers>0) {
           ShowPlayerDisplays();
@@ -1514,7 +1653,7 @@ int RunAttractMode(int curState, boolean curStateChanged) {
     // This attract mode shows the skill shot on top lanes
     // and sweeps the bonus tree  
     if (AttractLastPlayfieldMode!=1) {
-      if (Credits) BSOS_SetLampState(CREDIT_LIGHT, 1);
+      BSOS_SetLampState(CREDIT_LIGHT, Credits||FreePlayMode);
       for (int count=0; count<5; count++) {
         BSOS_SetLampState(PLAYER_21+count, 0);
         BSOS_SetLampState(DEALER_21+count, 0);
@@ -1536,7 +1675,7 @@ int RunAttractMode(int curState, boolean curStateChanged) {
     AttractLastPlayfieldMode = 1;
   } else if ((CurrentTime/6000)%3==1) {
     if (AttractLastPlayfieldMode!=2) {
-      if (Credits) BSOS_SetLampState(CREDIT_LIGHT, 1);
+      BSOS_SetLampState(CREDIT_LIGHT, Credits||FreePlayMode);
       BSOS_SetLampState(RED_BUMPER, 0);
       BSOS_SetLampState(SPADE_BUMPER, 0);
       BSOS_SetLampState(CLUB_BUMPER, 0);
@@ -1551,7 +1690,7 @@ int RunAttractMode(int curState, boolean curStateChanged) {
     AttractLastPlayfieldMode = 2;
   } else {
     if (AttractLastPlayfieldMode!=3) {
-      if (Credits) BSOS_SetLampState(CREDIT_LIGHT, 1);
+      BSOS_SetLampState(CREDIT_LIGHT, Credits||FreePlayMode);
 
       BSOS_SetLampState(LEFT_OUTLANE, 1, 0, 400);
       BSOS_SetLampState(RIGHT_OUTLANE, 1, 0, 400);
@@ -1576,6 +1715,116 @@ int RunAttractMode(int curState, boolean curStateChanged) {
   }
 
   returnState = ClearSwitchBuffer(returnState, true);
+
+  if (returnState==MACHINE_STATE_ATTRACT) {
+    if (CurrentTime>(LastTimeCreditButtonPressed+3000) && CurrentTime>(LastTimeCreditButtonReleased+3000)) {
+      LastTimeCreditButtonPressed = 0;
+      LastTimeCreditButtonReleased = 0;
+      CreditButtonSequenceGate = 0;  
+      BSOS_SetDisplayBallInPlay(CreditButtonSequenceGate);
+    }
+    
+    if (BSOS_ReadSingleSwitchState(SW_CREDIT_RESET)) {
+      // We must be out of credits
+      if (LastCreditButtonState==0) LastTimeCreditButtonPressed = CurrentTime;
+      LastCreditButtonState = 1;
+    } else {
+      if (LastCreditButtonState==1) LastTimeCreditButtonReleased = CurrentTime;
+      LastCreditButtonState = 0;      
+    }
+
+    if (LastTimeCreditButtonPressed && (LastTimeCreditButtonReleased!=0 || CreditButtonSequenceGate==0)) {
+      switch (CreditButtonSequenceGate) {
+        case 0:
+          if (LastCreditButtonState==0) {
+            if (CurrentTime>(LastTimeCreditButtonPressed+1000) && CurrentTime<(LastTimeCreditButtonReleased+1000)) {
+              CreditButtonSequenceGate = 1;
+            }
+          } else {
+            if (CurrentTime>(LastTimeCreditButtonPressed+1500)) {
+              LastTimeCreditButtonPressed = 0;
+              LastTimeCreditButtonReleased = 0;
+              CreditButtonSequenceGate = 0;  
+            }
+          }
+          break;
+        case 1:
+          if (LastCreditButtonState==1) {
+            if (CurrentTime>(LastTimeCreditButtonReleased+1000)) {
+              CreditButtonSequenceGate = 2;
+            } else {
+              LastTimeCreditButtonPressed = 0;
+              LastTimeCreditButtonReleased = 0;
+              CreditButtonSequenceGate = 0;  
+            }
+          }
+          break;
+        case 2:
+          if (LastCreditButtonState==0) {
+            if (CurrentTime>(LastTimeCreditButtonPressed+1000) && CurrentTime<(LastTimeCreditButtonReleased+1000)) {
+              CreditButtonSequenceGate = 3;
+            }
+          } else {
+            if (CurrentTime>(LastTimeCreditButtonPressed+1500)) {
+              LastTimeCreditButtonPressed = 0;
+              LastTimeCreditButtonReleased = 0;
+              CreditButtonSequenceGate = 0;  
+            }
+          }
+          break;
+        case 3:
+          if (LastCreditButtonState==1) {
+            if (CurrentTime>(LastTimeCreditButtonReleased+1000)) {
+              CreditButtonSequenceGate = 4;
+              BSOS_SetDisplayBallInPlay(CreditButtonSequenceGate);
+            } else {
+              LastTimeCreditButtonPressed = 0;
+              LastTimeCreditButtonReleased = 0;
+              CreditButtonSequenceGate = 0;  
+            }
+          }
+          break;
+        case 4:
+          if (LastCreditButtonState==0) {
+            if (CurrentTime>(LastTimeCreditButtonPressed+500) && CurrentTime<(LastTimeCreditButtonReleased+1000)) {
+              CreditButtonSequenceGate = 5;
+              BSOS_SetDisplayBallInPlay(CreditButtonSequenceGate);
+            }
+          } else {
+            if (CurrentTime>(LastTimeCreditButtonPressed+1000)) {
+              LastTimeCreditButtonPressed = 0;
+              LastTimeCreditButtonReleased = 0;
+              CreditButtonSequenceGate = 0;  
+            }
+          }
+          break;
+        case 5:
+          if (LastCreditButtonState==1) {
+            CreditButtonSequenceGate = 6;
+            BSOS_SetDisplayBallInPlay(CreditButtonSequenceGate);
+          }
+          break;
+        case 6:
+          if (LastCreditButtonState==0) {
+            if (CurrentTime>(LastTimeCreditButtonPressed+1000) && CurrentTime<(LastTimeCreditButtonReleased+1000)) {
+              AddCredit(10, true);
+              LastTimeCreditButtonPressed = 0;
+              LastTimeCreditButtonReleased = 0;
+              CreditButtonSequenceGate = 0;  
+            }
+          } else {
+            if (CurrentTime>(LastTimeCreditButtonPressed+1500)) {
+              LastTimeCreditButtonPressed = 0;
+              LastTimeCreditButtonReleased = 0;
+              CreditButtonSequenceGate = 0;  
+            }
+          }
+          break;
+      }
+      BSOS_SetDisplayBallInPlay(CreditButtonSequenceGate);      
+    }
+    
+  }
 
   return returnState;
 }
@@ -2287,7 +2536,11 @@ int RunGamePlayMode(int curState, boolean curStateChanged) {
       returnState = MACHINE_STATE_TEST_LIGHTS;
       SetLastSelfTestChangedTime(CurrentTime);
     } else if (switchHit==SW_COIN_1 || switchHit==SW_COIN_2 || switchHit==SW_COIN_3) {
-      AddCredit();
+      byte chuteNum = 0;
+      if (switchHit==SW_COIN_2) chuteNum = 1;
+      if (switchHit==SW_COIN_3) chuteNum = 2;
+      AddCoin(chuteNum);
+      AddCoinToAudit(switchHit);
     } else if (NumTiltWarnings>MaxTiltWarnings && switchHit==SW_SAUCER) {
       BSOS_PushToTimedSolenoidStack(SOL_SAUCER, 6, CurrentTime);
     } else if (NumTiltWarnings<=MaxTiltWarnings) {
@@ -2432,19 +2685,16 @@ int RunGamePlayMode(int curState, boolean curStateChanged) {
           if (CurrentBallInPlay<2) {
             // If we haven't finished the first ball, we can add players
             AddPlayer();
-          } else {
+          } else if (!NoResetDuringPlay) {
             // If the first ball is over, pressing start again resets the game
             if (Credits>=1 || FreePlayMode) {
               if (!FreePlayMode) {
                 Credits -= 1;
                 BSOS_WriteByteToEEProm(BSOS_CREDITS_EEPROM_BYTE, Credits);
-                BSOS_SetDisplayCredits(Credits, CreditDisplay);
+                BSOS_SetDisplayCredits(Credits, CreditDisplay && !FreePlayMode);
               }
               returnState = MACHINE_STATE_INIT_GAMEPLAY;
             }
-          }
-          if (DEBUG_MESSAGES) {
-            Serial.write("Start game button pressed\n\r");
           }
         break;        
         case SW_TILT:
@@ -2456,7 +2706,7 @@ int RunGamePlayMode(int curState, boolean curStateChanged) {
               BSOS_DisableSolenoidStack();
               BSOS_SetDisableFlippers(true);
               BSOS_TurnOffAllLamps();
-              if (Credits) BSOS_SetLampState(CREDIT_LIGHT, 1);
+              BSOS_SetLampState(CREDIT_LIGHT, Credits||FreePlayMode);
               BSOS_SetLampState(TILT, 1);
             }
             PlaySoundEffect(SOUND_EFFECT_TILT_WARNING);
