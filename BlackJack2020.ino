@@ -379,14 +379,14 @@ void PlaySoundEffect(byte soundEffectNum, unsigned long timeOffset=0) {
 */    
     case SOUND_EFFECT_MACHINE_START:
       BSOS_PushToTimedSolenoidStack(SOL_CHIME_100, 3, CurrentTime, true);
-      BSOS_PushToTimedSolenoidStack(SOL_CHIME_100, 3, CurrentTime+150, true);
-      BSOS_PushToTimedSolenoidStack(SOL_CHIME_1000, 3, CurrentTime+200, true);
-      BSOS_PushToTimedSolenoidStack(SOL_CHIME_10, 3, CurrentTime+400, true);
-      BSOS_PushToTimedSolenoidStack(SOL_CHIME_10, 3, CurrentTime+550, true);
-      BSOS_PushToTimedSolenoidStack(SOL_CHIME_100, 3, CurrentTime+600, true);
-      BSOS_PushToTimedSolenoidStack(SOL_CHIME_100, 3, CurrentTime+800, true);
-      BSOS_PushToTimedSolenoidStack(SOL_CHIME_100, 3, CurrentTime+950, true);
-      BSOS_PushToTimedSolenoidStack(SOL_CHIME_100, 3, CurrentTime+1000, true);
+      BSOS_PushToTimedSolenoidStack(SOL_CHIME_100, 3, CurrentTime+200, true);
+      BSOS_PushToTimedSolenoidStack(SOL_CHIME_1000, 3, CurrentTime+300, true);
+      BSOS_PushToTimedSolenoidStack(SOL_CHIME_10, 3, CurrentTime+600, true);
+      BSOS_PushToTimedSolenoidStack(SOL_CHIME_10, 3, CurrentTime+800, true);
+      BSOS_PushToTimedSolenoidStack(SOL_CHIME_100, 3, CurrentTime+900, true);
+      BSOS_PushToTimedSolenoidStack(SOL_CHIME_100, 3, CurrentTime+1200, true);
+      BSOS_PushToTimedSolenoidStack(SOL_CHIME_100, 3, CurrentTime+1400, true);
+      BSOS_PushToTimedSolenoidStack(SOL_CHIME_100, 3, CurrentTime+1500, true);
     break;
     case SOUND_EFFECT_ADD_CREDIT:
       BSOS_PushToTimedSolenoidStack(SOL_CHIME_10, 3, CurrentTime + timeOffset, true);
@@ -1821,7 +1821,7 @@ int RunAttractMode(int curState, boolean curStateChanged) {
           }
           break;
       }
-      BSOS_SetDisplayBallInPlay(CreditButtonSequenceGate);      
+      BSOS_SetDisplayBallInPlay(/*CreditButtonSequenceGate*/0);
     }
     
   }
