@@ -45,23 +45,21 @@ boolean MachineStateChanged = true;
 #define MACHINE_STATE_BALL_OVER       100
 #define MACHINE_STATE_GAME_OVER       110
 
-#define MACHINE_STATE_ADJUST_FREEPLAY           -17
-#define MACHINE_STATE_ADJUST_BALLSAVE           -18
-#define MACHINE_STATE_ADJUST_TILT_WARNING       -19
-#define MACHINE_STATE_ADJUST_TOURNAMENT_SCORING -20
-#define MACHINE_STATE_ADJUST_MUSIC_LEVEL        -21
-#define MACHINE_STATE_ADJUST_EXTRA_BALL_AWARD   -22
-#define MACHINE_STATE_ADJUST_SPECIAL_AWARD      -23
-#define MACHINE_STATE_ADJUST_AWARD_OVERRIDE     -24
-#define MACHINE_STATE_ADJUST_BALLS_PER_GAME     -25
-#define MACHINE_STATE_ADJUST_RANDOMIZE_DECK     -26
-#define MACHINE_STATE_ADJUST_HIT_OVER_16        -27
-#define MACHINE_STATE_ADJUST_SHOW_DEALER_HITS   -28
-#define MACHINE_STATE_ADJUST_PLAYER_LOSES_TIES  -29
-#define MACHINE_STATE_ADJUST_ONE_SPECIAL_PER_BALL -30
-#define MACHINE_STATE_ADJUST_CPC_CHUTE_1        -31
-#define MACHINE_STATE_ADJUST_CPC_CHUTE_2        -32
-#define MACHINE_STATE_ADJUST_CPC_CHUTE_3        -33
+/* TODO -- adjust this to be based on MACHINE_STATE_TEST_DONE */
+#define MACHINE_STATE_ADJUST_FREEPLAY           -20
+#define MACHINE_STATE_ADJUST_BALLSAVE           -21
+#define MACHINE_STATE_ADJUST_TILT_WARNING       -22
+#define MACHINE_STATE_ADJUST_TOURNAMENT_SCORING -23
+#define MACHINE_STATE_ADJUST_MUSIC_LEVEL        -24
+#define MACHINE_STATE_ADJUST_EXTRA_BALL_AWARD   -25
+#define MACHINE_STATE_ADJUST_SPECIAL_AWARD      -26
+#define MACHINE_STATE_ADJUST_AWARD_OVERRIDE     -27
+#define MACHINE_STATE_ADJUST_BALLS_PER_GAME     -28
+#define MACHINE_STATE_ADJUST_RANDOMIZE_DECK     -29
+#define MACHINE_STATE_ADJUST_HIT_OVER_16        -30
+#define MACHINE_STATE_ADJUST_SHOW_DEALER_HITS   -31
+#define MACHINE_STATE_ADJUST_PLAYER_LOSES_TIES  -32
+#define MACHINE_STATE_ADJUST_ONE_SPECIAL_PER_BALL -33
 #define MACHINE_STATE_ADJUST_NO_RESET_DURING_PLAY  -34
 #define MACHINE_STATE_ADJUST_DONE               -35
 
@@ -128,10 +126,7 @@ boolean MachineStateChanged = true;
 #define EEPROM_NUM_HITS_TO_SHOW_DEALER_BYTE   119
 #define EEPROM_PLAYER_LOSES_TIES_BYTE         120
 #define EEPROM_ONE_SPECIAL_PER_BALL_BYTE      121
-#define EEPROM_CPC_CHUTE_1_SELECTION        122
-#define EEPROM_CPC_CHUTE_2_SELECTION        123
-#define EEPROM_CPC_CHUTE_3_SELECTION        124
-#define EEPROM_NO_RESET_DURING_PLAY         125
+#define EEPROM_NO_RESET_DURING_PLAY         122
 
 
 
@@ -145,20 +140,7 @@ int MaximumCredits = 20;
 boolean FreePlayMode = false;
 byte CreditsPerCoin1, CreditsPerCoin2, CreditsPerCoin3;
 
-#define NUM_CPC_PAIRS 9
-byte CPCPairs[NUM_CPC_PAIRS][2] = {
-  {1, 5},
-  {1, 4},
-  {1, 3},
-  {1, 2},
-  {1, 1},
-  {2, 3},
-  {2, 1},
-  {3, 1},
-  {4, 1}
-};
 byte ChuteCoinsInProgress[3];
-byte CPCSelection[3];
 
 // Game mechanics
 byte CurrentPlayer = 0;
@@ -290,13 +272,6 @@ void GetStoredParameters() {
   ExtraBallValue = RPU_ReadULFromEEProm(EEPROM_EXTRA_BALL_SCORE_BYTE);
   SpecialValue = RPU_ReadULFromEEProm(EEPROM_SPECIAL_SCORE_BYTE);
   OneSpecialPerBall = ReadSetting(EEPROM_ONE_SPECIAL_PER_BALL_BYTE, false);
-
-  CPCSelection[0] = ReadSetting(EEPROM_CPC_CHUTE_1_SELECTION, 4);
-  if (CPCSelection[0]>8) CPCSelection[0] = 4;
-  CPCSelection[1] = ReadSetting(EEPROM_CPC_CHUTE_2_SELECTION, 4);
-  if (CPCSelection[1]>8) CPCSelection[1] = 4;
-  CPCSelection[2] = ReadSetting(EEPROM_CPC_CHUTE_3_SELECTION, 4);
-  if (CPCSelection[2]>8) CPCSelection[2] = 4;
 
   NoResetDuringPlay = ReadSetting(EEPROM_NO_RESET_DURING_PLAY, true)?true:false;
 
@@ -753,17 +728,18 @@ void AddCoinToAudit(byte switchHit) {
 boolean AddCoin(byte chuteNum) {
   boolean creditAdded = false;
   if (chuteNum>2) return false;
-  byte cpcSelection = CPCSelection[chuteNum];
+  byte cpcSelection = GetCPCSelection(chuteNum);
 
   // Find the lowest chute num with the same ratio selection
   // and use that ChuteCoinsInProgress counter
   byte chuteNumToUse;
   for (chuteNumToUse=0; chuteNumToUse<=chuteNum; chuteNumToUse++) {
-    if (CPCSelection[chuteNumToUse]==cpcSelection) break;
+    if (GetCPCSelection(chuteNumToUse) == cpcSelection)
+      break;
   }
 
-  byte cpcCoins = CPCPairs[cpcSelection][0];
-  byte cpcCredits = CPCPairs[cpcSelection][1];
+  byte cpcCoins = GetCPCCoins(cpcSelection);
+  byte cpcCredits = GetCPCCredits(cpcSelection);
   byte coinProgressBefore = ChuteCoinsInProgress[chuteNumToUse];
   ChuteCoinsInProgress[chuteNumToUse] += 1;
 
@@ -1081,18 +1057,6 @@ int RunSelfTest(int curState, boolean curStateChanged) {
       } else if (curState==MACHINE_STATE_ADJUST_ONE_SPECIAL_PER_BALL) {
         CurrentAdjustmentByte = (byte *)&OneSpecialPerBall;
         CurrentAdjustmentStorageByte = EEPROM_ONE_SPECIAL_PER_BALL_BYTE;
-      } else if (curState==MACHINE_STATE_ADJUST_CPC_CHUTE_1) {
-        AdjustmentValues[1] = 8;
-        CurrentAdjustmentByte = (byte *)&(CPCSelection[0]);
-        CurrentAdjustmentStorageByte = EEPROM_CPC_CHUTE_1_SELECTION;
-      } else if (curState==MACHINE_STATE_ADJUST_CPC_CHUTE_2) {
-        AdjustmentValues[1] = 8;
-        CurrentAdjustmentByte = (byte *)&(CPCSelection[1]);
-        CurrentAdjustmentStorageByte = EEPROM_CPC_CHUTE_2_SELECTION;
-      } else if (curState==MACHINE_STATE_ADJUST_CPC_CHUTE_3) {
-        AdjustmentValues[1] = 8;
-        CurrentAdjustmentByte = (byte *)&(CPCSelection[2]);
-        CurrentAdjustmentStorageByte = EEPROM_CPC_CHUTE_3_SELECTION;
       } else if (curState==MACHINE_STATE_ADJUST_NO_RESET_DURING_PLAY) {
         CurrentAdjustmentByte = (byte *)&NoResetDuringPlay;
         CurrentAdjustmentStorageByte = EEPROM_NO_RESET_DURING_PLAY;
@@ -1152,8 +1116,8 @@ int RunSelfTest(int curState, boolean curStateChanged) {
     if (CurrentAdjustmentByte!=NULL) {
       if (curState==MACHINE_STATE_ADJUST_CPC_CHUTE_1 || curState==MACHINE_STATE_ADJUST_CPC_CHUTE_2 || curState==MACHINE_STATE_ADJUST_CPC_CHUTE_3) {
         byte curSelection = *CurrentAdjustmentByte;
-        RPU_SetDisplay(0, CPCPairs[curSelection][0], true);
-        RPU_SetDisplay(2, CPCPairs[curSelection][1], true);
+        RPU_SetDisplay(0, GetCPCCoins(curSelection), true);
+        RPU_SetDisplay(2, GetCPCCredits(curSelection), true);
       } else {
         RPU_SetDisplay(0, (unsigned long)(*CurrentAdjustmentByte), true);
         RPU_SetDisplayBlank(2, 0x00);
