@@ -46,22 +46,22 @@ boolean MachineStateChanged = true;
 #define MACHINE_STATE_GAME_OVER       110
 
 /* TODO -- adjust this to be based on MACHINE_STATE_TEST_DONE */
-#define MACHINE_STATE_ADJUST_FREEPLAY           -20
-#define MACHINE_STATE_ADJUST_BALLSAVE           -21
-#define MACHINE_STATE_ADJUST_TILT_WARNING       -22
-#define MACHINE_STATE_ADJUST_TOURNAMENT_SCORING -23
-#define MACHINE_STATE_ADJUST_MUSIC_LEVEL        -24
-#define MACHINE_STATE_ADJUST_EXTRA_BALL_AWARD   -25
-#define MACHINE_STATE_ADJUST_SPECIAL_AWARD      -26
-#define MACHINE_STATE_ADJUST_AWARD_OVERRIDE     -27
-#define MACHINE_STATE_ADJUST_BALLS_PER_GAME     -28
-#define MACHINE_STATE_ADJUST_RANDOMIZE_DECK     -29
-#define MACHINE_STATE_ADJUST_HIT_OVER_16        -30
-#define MACHINE_STATE_ADJUST_SHOW_DEALER_HITS   -31
-#define MACHINE_STATE_ADJUST_PLAYER_LOSES_TIES  -32
-#define MACHINE_STATE_ADJUST_ONE_SPECIAL_PER_BALL -33
-#define MACHINE_STATE_ADJUST_NO_RESET_DURING_PLAY  -34
-#define MACHINE_STATE_ADJUST_DONE               -35
+#define MACHINE_STATE_ADJUST_FREEPLAY           -21
+#define MACHINE_STATE_ADJUST_BALLSAVE           -22
+#define MACHINE_STATE_ADJUST_TILT_WARNING       -23
+#define MACHINE_STATE_ADJUST_TOURNAMENT_SCORING -24
+#define MACHINE_STATE_ADJUST_MUSIC_LEVEL        -25
+#define MACHINE_STATE_ADJUST_EXTRA_BALL_AWARD   -26
+#define MACHINE_STATE_ADJUST_SPECIAL_AWARD      -27
+#define MACHINE_STATE_ADJUST_AWARD_OVERRIDE     -28
+#define MACHINE_STATE_ADJUST_BALLS_PER_GAME     -29
+#define MACHINE_STATE_ADJUST_RANDOMIZE_DECK     -30
+#define MACHINE_STATE_ADJUST_HIT_OVER_16        -31
+#define MACHINE_STATE_ADJUST_SHOW_DEALER_HITS   -32
+#define MACHINE_STATE_ADJUST_PLAYER_LOSES_TIES  -33
+#define MACHINE_STATE_ADJUST_ONE_SPECIAL_PER_BALL -34
+#define MACHINE_STATE_ADJUST_NO_RESET_DURING_PLAY  -35
+#define MACHINE_STATE_ADJUST_DONE               -36
 
 
 #define CLUB_BUMPER_INDEX     0
@@ -955,9 +955,9 @@ int RunSelfTest(int curState, boolean curStateChanged) {
   int returnState = curState;
   CurrentNumPlayers = 0;
 
-  // Any state that's greater than CHUTE_3 is handled by the Base Self-test code
+  // Any state that's greater than TEST_DONE is handled by the Base Self-test code
   // Any that's less, is machine specific, so we handle it here.
-  if (curState>=MACHINE_STATE_TEST_CHUTE_3_COINS) {
+  if (curState>=MACHINE_STATE_TEST_DONE) {
     returnState = RunBaseSelfTest(returnState, curStateChanged, CurrentTime, SW_CREDIT_RESET, SW_SLAM);
     if (returnState==MACHINE_STATE_ATTRACT) {
       DecodeDIPSwitchParameters();
