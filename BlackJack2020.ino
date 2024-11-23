@@ -484,7 +484,8 @@ void setup() {
   RPU_SetupGameSwitches(NUM_SWITCHES_WITH_TRIGGERS, NUM_PRIORITY_SWITCHES_WITH_TRIGGERS, TriggeredSwitches);
 
   // Set up the chips and interrupts
-  RPU_InitializeMPU();
+  RPU_InitializeMPU(RPU_CMD_BOOT_ORIGINAL_IF_CREDIT_RESET | RPU_CMD_PERFORM_MPU_TEST,
+                    SW_CREDIT_RESET);
   RPU_DisableSolenoidStack();
   RPU_SetDisableFlippers(true);
 
